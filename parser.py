@@ -1,6 +1,6 @@
 import pandas as pd
 import csv
-import os
+import openpyxl
 
 
 class Parser:
@@ -8,7 +8,7 @@ class Parser:
     def __init__(self):
         self.new_df = None
         file_path = 'C:\\Users\\rosin\\OneDrive\\Documents\\bpprintgroup\\zmanim\\badzman.xlsx'
-        old_df = pd.read_excel(file_path, sheet_name='Lakewood08781')
+        old_df = pd.read_excel(file_path)
         self.new_df = pd.DataFrame(
             columns=['WkDay', 'CivilDate', 'JewishDate', 'HolidayHebrew', 'Plaque1', 'Plaque2', 'Plaque3', 'Plaque4'
                 , 'bottomtext', 'extrabottomtext', 'HolidayEnglish', 'ParshaHebrew', 'ParshaEnglish', 'DafYomi', 'Omer'
@@ -19,31 +19,22 @@ class Parser:
             if column in old_df.columns:
                 self.new_df[column] = old_df[column]
 
-        # Open a CSV file for writing
-        with open('C:\\Users\\rosin\\OneDrive\\Documents\\bpprintgroup\\zmanim', 'w', newline='') as file:
-            writer = csv.writer(file)
-
-
-
-        # Save the DataFrame to a CSV file
-        self.new_df.to_csv('C:\\Users\\rosin\\OneDrive\\Documents\\bpprintgroup\\zmanim.csv', index=False)
-
     def fill_plaque1(self):
-        erev_pesach = self.new_df[self.new_df['HolidayEnglish'] == 'Erev Pesach'].index
-        shmini_atzeres = self.new_df[self.new_df['HolidayEnglish'] == 'Shmini Atzeres'].index
+        erev_pesach = self.new_df[self.new_df['HolidayEnglish'] == 'Erev Pesach'].index[0]
+        shmini_atzeres = self.new_df[self.new_df['HolidayEnglish'] == 'Shmini Atzeres'].index[0]
         self.new_df.loc[:erev_pesach, 'Plaque1'] = 'משיב הרוח'
         self.new_df.loc[erev_pesach + 1:shmini_atzeres, 'Plaque1'] = 'ותן ברכה'
         self.new_df.loc[shmini_atzeres + 1:, 'Plaque1'] = 'משיב הרוח'
 
     def fill_plaque2(self):
-        erev_pesach = self.new_df[self.new_df['HolidayEnglish'] == 'Erev Pesach'].index
+        erev_pesach = self.new_df[self.new_df['HolidayEnglish'] == 'Erev Pesach'].index[0]
         self.new_df.loc[:erev_pesach, 'Plaque2'] = 'ותן תל ומטר'
 
-        simchas_torah = self.new_df[self.new_df['HolidayEnglish'] == 'Simchas Torah'].index
+        simchas_torah = self.new_df[self.new_df['HolidayEnglish'] == 'Simchas Torah'].index[0]
         self.new_df.loc[simchas_torah:, 'Plaque2'] = 'ותן ברכה'
 
-        rosh_hashanah = self.new_df[self.new_df['HolidayEnglish'] == 'Rosh Hashanah'].index
-        # yom kippur is always 10 days after rosh hashanah
+        rosh_hashanah = self.new_df[self.new_df['HolidayEnglish'] == 'Rosh Hashanah'].index[0]
+        # yom kippur is always 10 days after first day of rosh hashanah
         self.new_df.loc[rosh_hashanah:rosh_hashanah + 10, 'Plaque2'] = 'המלך הקדוש'
         # come back to after isru chag until rosh chodesh
 
@@ -53,8 +44,8 @@ class Parser:
 
     def fill_plaque3(self):
         # say david adonai ori for 50 days starting after elul
-        david_adonai_ori = self.new_df[self.new_df['HolidayHebrew'] == 'ראש חודש אלול'].index
-        self.new_df.loc[david_adonai_ori[1] + 1:david_adonai_ori[1] + 49, 'Plaque3'] = 'לדוד ה׳ אורי'
+        david_adonai_ori = self.new_df[self.new_df['HolidayHebrew'] == 'ראש חודש אלול'].index[1]
+        self.new_df.loc[david_adonai_ori + 1:david_adonai_ori + 50, 'Plaque3'] = 'לדוד ה׳ אורי'
 
     def fill_plaque4(self):
         row_number = self.new_df.index[self.new_df['HolidayHebrew'] == 'ראש חודש אלול'].tolist()[1]
@@ -62,7 +53,7 @@ class Parser:
 
         for index, row in self.new_df.iterrows():
             if row['Candles'] != '':
-                row['Plaque4'] = row['Candles'].replace('PM', '') + 'הדל״נ'
+                row['Plaque4'] = '\u05D4\u05D3\u05DC\u05F4\u05E0'
 
     def fill_bottomtext(self):
         hebrew_phrases = [
@@ -123,6 +114,10 @@ class Parser:
         self.new_df['bottomtext'] = self.new_df['bottomtext'].fillna('שויתי ה׳ לנגדי תמיד')
 
     # fill in for the friday and shabbos before every rosh chodesh
+
+    def to_csv(self):
+        # Save the DataFrame to a CSV file
+        self.new_df.to_csv('C:\\Users\\rosin\\OneDrive\\Documents\\bpprintgroup\\zmanim\\zmanim.csv', index=False)
 
     def get_parsha(self, starting_row):
         for index, row in self.new_df.iloc[starting_row:].iterrows():
