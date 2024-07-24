@@ -1,23 +1,32 @@
 import pandas as pd
-import csv
-import openpyxl
 
 
 class Parser:
+    time_only = {'Alos72', 'TalisDefault', 'Sunrise', 'ShemaMA72', 'ShemaMA72fix', 'ShemaGro', 'ShachrisGro', 'Midday',
+                 'MinchaGroLechumra', 'KetanaGro', 'PlagGro', 'Candles', 'Sunset', 'Tzes3Stars', 'Tzes72'}
 
     def __init__(self):
         self.new_df = None
         file_path = 'C:\\Users\\rosin\\OneDrive\\Documents\\bpprintgroup\\zmanim\\badzman.xlsx'
         old_df = pd.read_excel(file_path)
         self.new_df = pd.DataFrame(
-            columns=['WkDay', 'CivilDate', 'JewishDate', 'HolidayHebrew', 'Plaque1', 'Plaque2', 'Plaque3', 'Plaque4'
-                , 'bottomtext', 'extrabottomtext', 'HolidayEnglish', 'ParshaHebrew', 'ParshaEnglish', 'DafYomi', 'Omer'
-                , 'Alos72', 'TalisDefault', 'Sunrise', 'ShemaMA72', 'ShemaMA72fix', 'ShemaGro', 'ShachrisGro', 'Midday'
-                , 'MinchaGroLechumra', 'KetanaGro', 'PlagGro', 'Candles', 'Sunset', 'Tzes3Stars', 'Tzes72'])
+            columns=['WkDay', 'CivilDate', 'JewishDate', 'HolidayHebrew', 'Plaque1', 'Plaque2', 'Plaque3', 'Plaque4',
+                     'bottomtext', 'extrabottomtext', 'HolidayEnglish', 'ParshaHebrew', 'ParshaEnglish', 'DafYomi',
+                     'Omer', 'Alos72', 'TalisDefault', 'Sunrise', 'ShemaMA72', 'ShemaMA72fix', 'ShemaGro',
+                     'ShachrisGro', 'Midday', 'MinchaGroLechumra', 'KetanaGro', 'PlagGro', 'Candles', 'Sunset',
+                     'Tzes3Stars', 'Tzes72'])
 
         for column in self.new_df.columns:
             if column in old_df.columns:
-                self.new_df[column] = old_df[column]
+                if column == 'CivilDate':
+                    old_df['CivilDate'] = pd.to_datetime(old_df['CivilDate'], format='%m/%d/%Y')
+                    self.new_df['CivilDate'] = old_df['CivilDate'].dt.strftime('%m/%d/%Y')
+                elif column in self.__class__.time_only:
+                    old_df['CivilDate'] = pd.to_datetime(old_df['CivilDate'], format='%m/%d/%Y')
+                    # Format time without seconds
+                    self.new_df[column] = old_df[column].apply(lambda x: x.strftime('%I:%M %p') if pd.notnull(x) else x)
+                else:
+                    self.new_df[column] = old_df[column]
 
     def fill_plaque1(self):
         erev_pesach = self.new_df[self.new_df['HolidayEnglish'] == 'Erev Pesach'].index[0]
@@ -41,6 +50,28 @@ class Parser:
         yaaleh_veyuvo = {'Rosh Chodesh', 'Pesach', 'Chol Hamoed', 'Erev Shvii shel Pesach', 'Shvii shel Pesach',
                          'Acharon shel Pesach', 'Shavuos', 'Sukkos', 'Shabbos Chol Hamoed', 'Hoshanah Rabbah',
                          'Shmini Atzeres'}
+        no_tachanun = {'Pesach Sheini', 'Lag BaOmer', 'Isru Chag', 'Tu B׳Shvat', 'Shushan Purim'}
+
+        al_hanisim = {'Purim', 'Chanukah', 'Shabbos Chanukah'}
+
+        for index, row in self.new_df.iterrows():
+            if row['HolidayEnglish'] in yaaleh_veyuvo:
+                if pd.isna(row['Plaque2']):
+                    self.new_df.loc[index, 'Plaque2'] = 'יעלה ויבא'
+                elif pd.isna(row['Plaque3']):
+                    self.new_df.loc[index, 'Plaque3'] = 'יעלה ויבא'
+                elif pd.isna(row['Plaque4']):
+                    self.new_df.loc[index, 'Plaque3'] = 'יעלה ויבא'
+            if row['HolidayEnglish'] in no_tachanun:
+                if pd.isna(row['Plaque2']):
+                    self.new_df.loc[index, 'Plaque2'] = "א" + "\u05F4" + "א " + "תחנון"
+                elif pd.isna(row['Plaque3']):
+                    self.new_df.loc[index, 'Plaque3'] = "א" + "\u05F4" + "א " + "תחנון"
+            if row['HolidayEnglish'] in al_hanisim:
+                if pd.isna(row['Plaque2']):
+                    self.new_df.loc[index, 'Plaque2'] = 'על הנסים'
+                elif pd.isna(row['Plaque3']):
+                    self.new_df.loc[index, 'Plaque3'] = 'על הנסים'
 
     def fill_plaque3(self):
         # say david adonai ori for 50 days starting after elul
@@ -54,6 +85,9 @@ class Parser:
         for index, row in self.new_df.iterrows():
             if row['Candles'] != '':
                 row['Plaque4'] = '\u05D4\u05D3\u05DC\u05F4\u05E0'
+
+    def fill_dafyomitext(self):
+        self.new_df['DafYomi'] = self.new_df['DafYomi'].apply(lambda x: f"דף יומי: {x}")
 
     def fill_bottomtext(self):
         hebrew_phrases = [
@@ -109,15 +143,19 @@ class Parser:
         ]
 
         for index, row in self.new_df.iterrows():
-            if row['Omer'] != '':
-                row['bottomtext'] = hebrew_phrases[int(row['Omer']) - 1]
+            if pd.notna(row['Omer']):
+                self.new_df.loc[index, 'bottomtext'] = hebrew_phrases[int(row['Omer']) - 1]
         self.new_df['bottomtext'] = self.new_df['bottomtext'].fillna('שויתי ה׳ לנגדי תמיד')
 
     # fill in for the friday and shabbos before every rosh chodesh
 
     def to_csv(self):
         # Save the DataFrame to a CSV file
-        self.new_df.to_csv('C:\\Users\\rosin\\OneDrive\\Documents\\bpprintgroup\\zmanim\\zmanim.csv', index=False)
+        self.new_df.to_csv('C:\\Users\\rosin\\OneDrive\\Documents\\bpprintgroup\\zmanim\\zmanimcsv.csv', index=False)
+
+    def to_excel(self):
+        self.new_df.to_excel('C:\\Users\\rosin\\OneDrive\\Documents\\bpprintgroup\\zmanim\\zmanimexcel.xlsx',
+                             index=False)
 
     def get_parsha(self, starting_row):
         for index, row in self.new_df.iloc[starting_row:].iterrows():
