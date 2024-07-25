@@ -1,7 +1,8 @@
 import pandas as pd
 import os
+import sys
 
-current_directory = os.path.dirname(os.path.abspath(__file__))
+current_directory = os.path.dirname(sys.argv[0]) if getattr(sys, 'frozen', False) else os.path.dirname(os.path.abspath(__file__))
 
 
 class Parser:
@@ -10,7 +11,7 @@ class Parser:
 
     def __init__(self):
         self.new_df = None
-        file_path = current_directory + 'badzman.xlsx'
+        file_path = current_directory + '\\badzman.xlsx'
         old_df = pd.read_excel(file_path)
         self.new_df = pd.DataFrame(
             columns=['WkDay', 'CivilDate', 'JewishDate', 'HolidayHebrew', 'Plaque1', 'Plaque2', 'Plaque3', 'Plaque4',
@@ -105,7 +106,7 @@ class Parser:
         self.new_df['DafYomi'] = self.new_df['DafYomi'].apply(lambda x: f"דף יומי: {x}")
 
     def fill_perek(self):
-        # start after pesach, end the shabbos before rosh hashanah
+        # Start after Pesach, end the Shabbos before Rosh Hashanah
         isru_chag_pesach = self.new_df[self.new_df['HolidayEnglish'] == 'Isru Chag'].index[0]
         rosh_hashanah_index = self.new_df[self.new_df['HolidayEnglish'] == 'Rosh Hashanah'].index[0]
 
@@ -113,7 +114,17 @@ class Parser:
         last_shabbos = self.new_df[(self.new_df.index < rosh_hashanah_index) & (self.new_df['WkDay'] == 'Sha')].index[
             -1]
 
-        perakim, counter = {0: 'א', 1: 'ב', 2: 'ג', 3: 'ד', 4: 'ה', 5: 'ו'}, 0
+        perakim = {0: 'א', 1: 'ב', 2: 'ג', 3: 'ד', 4: 'ה', 5: 'ו'}
+        num_perakim = len(perakim)
+        counter = 0
+
+        # Find all Shabbats between Isru Chag Pesach and last Shabbat before Rosh Hashanah
+        shabbat_indexes = self.new_df[(self.new_df.index >= isru_chag_pesach) & (self.new_df.index <= last_shabbos) & (
+                self.new_df['WkDay'] == 'Sha')].index
+        num_shabbats = len(shabbat_indexes)
+
+        # Determine if doubling up is necessary
+        doubling_up = False
 
         for index in self.new_df.index:
             if index > last_shabbos:
@@ -121,21 +132,53 @@ class Parser:
             if index < isru_chag_pesach:
                 continue
 
-            text = 'פרק ' + perakim[counter % len(perakim)] + '\u05F3'
-            if self.new_df.at[index, 'WkDay'] == 'Sha':
-                counter += 1
+            if num_shabbats - counter == (num_perakim - counter % num_perakim) // 2:
+                doubling_up = True
 
+            # Calculate which chapter to assign
+            text = 'פרק ' + perakim[counter % num_perakim] + '\u05F3'
+            if doubling_up:
+                text = text + '-' + perakim[counter % num_perakim + 1] + '\u05F3'
+
+            if self.new_df.at[index, 'WkDay'] == 'Sha':
+                counter += 2 if doubling_up else 1
+
+            # Determine the correct plaque column to fill
             plaque_col = 'Plaque3' if pd.isna(self.new_df.at[index, 'Plaque3']) else 'Plaque2'
             self.new_df.at[index, plaque_col] = text
 
-        # df_reversed = self.new_df['Plaque2'][::-1].copy()
-
-        # for index in df_reversed.index:
-        #     if counter % len(perakim) != 0:
-        #         break
-        #     df_reversed.at[index] += ('-' + perakim[counter % len(perakim)] + '\u05F3')
-        #     if self.new_df.at[index, 'WkDay'] == 'Sha':
-        #         counter += 1
+    # def fill_perek(self):
+    #     # start after pesach, end the shabbos before rosh hashanah
+    #     isru_chag_pesach = self.new_df[self.new_df['HolidayEnglish'] == 'Isru Chag'].index[0]
+    #     rosh_hashanah_index = self.new_df[self.new_df['HolidayEnglish'] == 'Rosh Hashanah'].index[0]
+    #
+    #     # Find the last Shabbos before Rosh Hashanah
+    #     last_shabbos = self.new_df[(self.new_df.index < rosh_hashanah_index) & (self.new_df['WkDay'] == 'Sha')].index[
+    #         -1]
+    #
+    #     perakim, counter = {0: 'א', 1: 'ב', 2: 'ג', 3: 'ד', 4: 'ה', 5: 'ו'}, 0
+    #
+    #     for index in self.new_df.index:
+    #         if index > last_shabbos:
+    #             break
+    #         if index < isru_chag_pesach:
+    #             continue
+    #
+    #         text = 'פרק ' + perakim[counter % len(perakim)] + '\u05F3'
+    #         if self.new_df.at[index, 'WkDay'] == 'Sha':
+    #             counter += 1
+    #
+    #         plaque_col = 'Plaque3' if pd.isna(self.new_df.at[index, 'Plaque3']) else 'Plaque2'
+    #         self.new_df.at[index, plaque_col] = text
+    #
+    #     # df_reversed = self.new_df['Plaque2'][::-1].copy()
+    #
+    #     # for index in df_reversed.index:
+    #     #     if counter % len(perakim) != 0:
+    #     #         break
+    #     #     df_reversed.at[index] += ('-' + perakim[counter % len(perakim)] + '\u05F3')
+    #     #     if self.new_df.at[index, 'WkDay'] == 'Sha':
+    #     #         counter += 1
 
     def fill_parshah(self):
         current_parshah = None
