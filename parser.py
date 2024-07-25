@@ -1,4 +1,7 @@
 import pandas as pd
+import os
+
+current_directory = os.path.dirname(os.path.abspath(__file__))
 
 
 class Parser:
@@ -7,7 +10,7 @@ class Parser:
 
     def __init__(self):
         self.new_df = None
-        file_path = 'C:\\Users\\rosin\\OneDrive\\Documents\\bpprintgroup\\zmanim\\badzman.xlsx'
+        file_path = current_directory + 'badzman.xlsx'
         old_df = pd.read_excel(file_path)
         self.new_df = pd.DataFrame(
             columns=['WkDay', 'CivilDate', 'JewishDate', 'HolidayHebrew', 'Plaque1', 'Plaque2', 'Plaque3', 'Plaque4',
@@ -20,11 +23,12 @@ class Parser:
             if column in old_df.columns:
                 if column == 'CivilDate':
                     old_df['CivilDate'] = pd.to_datetime(old_df['CivilDate'], format='%m/%d/%Y')
-                    self.new_df['CivilDate'] = old_df['CivilDate'].dt.strftime('%m/%d/%Y')
+                    self.new_df['CivilDate'] = old_df['CivilDate'].apply(
+                        lambda x: f"{x.month}/{x.day}/{str(x.year)[-2:]}")
                 elif column in self.__class__.time_only:
-                    old_df['CivilDate'] = pd.to_datetime(old_df['CivilDate'], format='%m/%d/%Y')
                     # Format time without seconds
-                    self.new_df[column] = old_df[column].apply(lambda x: x.strftime('%I:%M %p') if pd.notnull(x) else x)
+                    self.new_df[column] = old_df[column].apply(
+                        lambda x: x.strftime('%I:%M %p').lstrip('0') if pd.notnull(x) else x)
                 else:
                     self.new_df[column] = old_df[column]
 
@@ -42,14 +46,24 @@ class Parser:
         simchas_torah = self.new_df[self.new_df['HolidayEnglish'] == 'Simchas Torah'].index[0]
         self.new_df.loc[simchas_torah:, 'Plaque2'] = 'ותן ברכה'
 
+        # start vesen tal umatar on december 5th
+        vesen_tal_umatar = self.new_df[self.new_df['CivilDate'] == '12/5/24'].index[0]
+        self.new_df.loc[vesen_tal_umatar:, 'Plaque2'] = 'ותן טל ומטר'
+
         rosh_hashanah = self.new_df[self.new_df['HolidayEnglish'] == 'Rosh Hashanah'].index[0]
         # yom kippur is always 10 days after first day of rosh hashanah
         self.new_df.loc[rosh_hashanah:rosh_hashanah + 10, 'Plaque2'] = 'המלך הקדוש'
-        # come back to after isru chag until rosh chodesh
 
-        yaaleh_veyuvo = {'Rosh Chodesh', 'Pesach', 'Chol Hamoed', 'Erev Shvii shel Pesach', 'Shvii shel Pesach',
-                         'Acharon shel Pesach', 'Shavuos', 'Sukkos', 'Shabbos Chol Hamoed', 'Hoshanah Rabbah',
-                         'Shmini Atzeres'}
+        # isru chag after pesach
+        isru_chag_pesach = self.new_df[self.new_df['HolidayEnglish'] == 'Isru Chag'].index[0]
+        rosh_chodesh_eyar = self.new_df[self.new_df['HolidayHebrew'] == 'ראש חודש אייר'].index[0]
+        self.new_df.loc[isru_chag_pesach + 1:rosh_chodesh_eyar - 1, 'Plaque2'] = "א" + "\u05F4" + "א " + "תחנון"
+        # no tachanun in between yom kippur and succos
+        self.new_df.loc[rosh_hashanah + 10:rosh_hashanah + 15, 'Plaque2'] = "א" + "\u05F4" + "א " + "תחנון"
+
+        yaaleh_veyuvo = {'Rosh Chodesh', 'Pesach', 'Chol HaMoed', 'Erev Shvii shel Pesach', 'Shvii shel Pesach',
+                         'Acharon shel Pesach', 'Shavuos', 'Sukkos', 'Shabbos Chol HaMoed', 'Hoshanah Rabbah',
+                         'Shmini Atzeres', 'Simchas Torah'}
         no_tachanun = {'Pesach Sheini', 'Lag BaOmer', 'Isru Chag', 'Tu B׳Shvat', 'Shushan Purim'}
 
         al_hanisim = {'Purim', 'Chanukah', 'Shabbos Chanukah'}
@@ -83,11 +97,55 @@ class Parser:
         self.new_df.at[row_number, 'Plaque4'] = 'לדוד ה׳ אורי'
 
         for index, row in self.new_df.iterrows():
-            if row['Candles'] != '':
-                row['Plaque4'] = '\u05D4\u05D3\u05DC\u05F4\u05E0'
+            if pd.notna(row['Candles']):
+                self.new_df.loc[index, 'Plaque4'] = ('\u05D4\u05D3\u05DC\u05F4\u05E0' + ' '
+                                                     + row['Candles'].replace('PM', ''))
 
     def fill_dafyomitext(self):
         self.new_df['DafYomi'] = self.new_df['DafYomi'].apply(lambda x: f"דף יומי: {x}")
+
+    def fill_perek(self):
+        # start after pesach, end the shabbos before rosh hashanah
+        isru_chag_pesach = self.new_df[self.new_df['HolidayEnglish'] == 'Isru Chag'].index[0]
+        rosh_hashanah_index = self.new_df[self.new_df['HolidayEnglish'] == 'Rosh Hashanah'].index[0]
+
+        # Find the last Shabbos before Rosh Hashanah
+        last_shabbos = self.new_df[(self.new_df.index < rosh_hashanah_index) & (self.new_df['WkDay'] == 'Sha')].index[
+            -1]
+
+        perakim, counter = {0: 'א', 1: 'ב', 2: 'ג', 3: 'ד', 4: 'ה', 5: 'ו'}, 0
+
+        for index in self.new_df.index:
+            if index > last_shabbos:
+                break
+            if index < isru_chag_pesach:
+                continue
+
+            text = 'פרק ' + perakim[counter % len(perakim)] + '\u05F3'
+            if self.new_df.at[index, 'WkDay'] == 'Sha':
+                counter += 1
+
+            plaque_col = 'Plaque3' if pd.isna(self.new_df.at[index, 'Plaque3']) else 'Plaque2'
+            self.new_df.at[index, plaque_col] = text
+
+        # df_reversed = self.new_df['Plaque2'][::-1].copy()
+
+        # for index in df_reversed.index:
+        #     if counter % len(perakim) != 0:
+        #         break
+        #     df_reversed.at[index] += ('-' + perakim[counter % len(perakim)] + '\u05F3')
+        #     if self.new_df.at[index, 'WkDay'] == 'Sha':
+        #         counter += 1
+
+    def fill_parshah(self):
+        current_parshah = None
+        df_reversed = self.new_df['ParshaHebrew'][::-1].copy()
+        for index in df_reversed.index:
+            if pd.notna(df_reversed[index]):
+                current_parshah = df_reversed[index]
+            if current_parshah:
+                df_reversed[index] = current_parshah
+        self.new_df['ParshaHebrew'] = df_reversed[::-1].apply(lambda x: 'פרשת ' + str(x) if pd.notna(x) else x)
 
     def fill_bottomtext(self):
         hebrew_phrases = [
@@ -151,13 +209,9 @@ class Parser:
 
     def to_csv(self):
         # Save the DataFrame to a CSV file
-        self.new_df.to_csv('C:\\Users\\rosin\\OneDrive\\Documents\\bpprintgroup\\zmanim\\zmanimcsv.csv', index=False)
+        self.new_df.to_csv(current_directory + '\\Zmanim.csv',
+                           index=False)
 
     def to_excel(self):
-        self.new_df.to_excel('C:\\Users\\rosin\\OneDrive\\Documents\\bpprintgroup\\zmanim\\zmanimexcel.xlsx',
+        self.new_df.to_excel(current_directory + '\\zmanexcel.xlsx',
                              index=False)
-
-    def get_parsha(self, starting_row):
-        for index, row in self.new_df.iloc[starting_row:].iterrows():
-            if row['ParshaHebrew'] != '':
-                return row['ParshaHebrew']
